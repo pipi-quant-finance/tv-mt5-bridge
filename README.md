@@ -1,5 +1,8 @@
 # TradingView → MT5 自动交易桥接服务（FTMO）
 
+> **一句话简介**：把 TradingView 的 Webhook 预警信号自动转成 MT5 真实订单（支持 FTMO 风控规则），
+> 同时提供本地 Web 管理后台做资金曲线、信号/订单、回撤分析与 MT5 进程守护。
+
 TradingView 付费版 Webhook 信号 → Flask → MetaTrader5 → DuckDB 的量化自动下单桥接服务，
 
 附带 **管理后台 Dashboard** 与 **MT5 进程守护脚本**。
