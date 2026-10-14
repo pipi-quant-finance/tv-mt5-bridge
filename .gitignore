@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.venv-test/
+
+# 环境与运行产物
+.env
+trading_log.duckdb
+*.log
+*.err.log
+
+# 系统
+.DS_Store

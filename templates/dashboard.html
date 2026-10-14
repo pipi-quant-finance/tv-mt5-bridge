@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TV→MT5 交易桥 · 管理后台</title>
+<script src="/static/echarts.min.js"></script>
+<style>
+  :root{
+    --bg:#0f1420; --panel:#161d2c; --panel2:#1b2436; --line:#26324a;
+    --txt:#e6edf7; --mut:#8ba0bd; --acc:#4f8cff; --green:#2ecc71; --red:#ff5b5b; --gold:#f5b942;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--txt);}
+  .layout{display:flex;min-height:100vh}
+  /* 侧边栏 */
+  .side{width:208px;background:var(--panel);border-right:1px solid var(--line);padding:20px 14px;position:sticky;top:0;height:100vh}
+  .brand{font-weight:700;font-size:16px;margin-bottom:4px;color:#fff}
+  .brand small{color:var(--mut);font-size:11px;font-weight:400}
+  .nav{list-style:none;margin-top:22px}
+  .nav li{padding:11px 14px;border-radius:8px;cursor:pointer;color:var(--mut);margin-bottom:4px;font-size:14px;transition:.15s}
+  .nav li:hover{background:var(--panel2);color:var(--txt)}
+  .nav li.on{background:rgba(79,140,255,.14);color:var(--acc);font-weight:600}
+  .side .foot{margin-top:26px;font-size:11px;color:var(--mut);line-height:1.8}
+  /* 主区 */
+  .main{flex:1;padding:22px 26px}
+  .page{display:none}.page.on{display:block}
+  h2{font-size:18px;margin-bottom:16px}
+  /* KPI */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:18px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .kpi .l{color:var(--mut);font-size:12px}
+  .kpi .v{font-size:22px;font-weight:700;margin-top:6px}
+  .kpi .s{font-size:11px;color:var(--mut);margin-top:4px}
+  .up{color:var(--green)} .down{color:var(--red)}
+  /* 图表 */
+  .charts{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}
+  .chart{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .chart h4{font-size:13px;color:var(--mut);margin-bottom:8px}
+  .box{height:300px}
+  .full{grid-column:1/-1}
+  /* 表格 */
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{color:var(--mut);text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);font-weight:500;white-space:nowrap}
+  td{padding:8px 10px;border-bottom:1px solid rgba(38,50,74,.5);white-space:nowrap}
+  tr:hover td{background:var(--panel2)}
+  .tag{padding:2px 8px;border-radius:10px;font-size:11px}
+  .tag.buy{background:rgba(46,204,113,.15);color:var(--green)}
+  .tag.sell{background:rgba(255,91,91,.15);color:var(--red)}
+  .tag.close{background:rgba(245,185,66,.15);color:var(--gold)}
+  .ok{color:var(--green)} .bad{color:var(--red)}
+  /* 筛选 & 表单 */
+  .bar{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+  input,select,button{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:8px 12px;font-size:13px;outline:none}
+  input:focus,select:focus{border-color:var(--acc)}
+  button{cursor:pointer;transition:.15s}
+  button:hover{border-color:var(--acc)}
+  button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+  button.primary:hover{opacity:.85}
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-bottom:12px}
+  label{display:block;font-size:12px;color:var(--mut);margin-bottom:4px}
+  .msg{padding:10px 14px;border-radius:8px;margin-top:10px;font-size:13px;display:none}
+  .msg.ok{display:block;background:rgba(46,204,113,.12);color:var(--green)}
+  .msg.err{display:block;background:rgba(255,91,91,.12);color:var(--red)}
+  .small{color:var(--mut);font-size:11px}
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="side">
+    <div class="brand">TV→MT5 交易桥<small>FTMO 自动化管理后台</small></div>
+    <ul class="nav">
+      <li data-p="overview" class="on">📊 总览</li>
+      <li data-p="signals">🕘 信号流</li>
+      <li data-p="orders">📑 订单记录</li>
+      <li data-p="analysis">📈 分析</li>
+      <li data-p="manage">⚙️ 管理 & 测试</li>
+    </ul>
+    <div class="foot">
+      数据源：trading_log.duckdb<br>
+      桥接服务：/webhook (5000)<br>
+      Dashboard：/ (8080)
+    </div>
+  </aside>
+
+  <div class="main">
+    <!-- 总览 -->
+    <div class="page on" id="p-overview">
+      <h2>账户总览</h2>
+      <div id="news-bar"></div>
+      <div class="kpis" id="kpis"></div>
+      <div class="charts">
+        <div class="chart full"><h4>资金曲线（每日权益）</h4><div class="box" id="c-equity"></div></div>
+        <div class="chart"><h4>每日盈亏</h4><div class="box" id="c-pnl"></div></div>
+        <div class="chart"><h4>信号处理状态</h4><div class="box" id="c-signal"></div></div>
+      </div>
+    </div>
+
+    <!-- 信号 -->
+    <div class="page" id="p-signals">
+      <h2>信号流</h2>
+      <div class="bar">
+        <input id="f-sym" placeholder="品种(如 GOLD)">
+        <select id="f-act">
+          <option value="">全部方向</option>
+          <option>buy</option><option>sell</option><option>close</option>
+        </select>
+        <button class="primary" onclick="loadSignals()">查询</button>
+        <span class="small">每 10 秒自动刷新</span>
+      </div>
+      <div class="panel" style="overflow:auto;max-height:640px">
+        <table id="t-signals"><thead></thead><tbody></tbody></table>
+      </div>
+    </div>
+
+    <!-- 订单 -->
+    <div class="page" id="p-orders">
+      <h2>订单记录</h2>
+      <div class="panel" style="overflow:auto;max-height:640px">
+        <table id="t-orders"><thead></thead><tbody></tbody></table>
+      </div>
+    </div>
+
+    <!-- 分析 -->
+    <div class="page" id="p-analysis">
+      <h2>交易分析</h2>
+      <div class="charts">
+        <div class="chart"><h4>各品种信号量</h4><div class="box" id="c-sym"></div></div>
+        <div class="chart"><h4>方向分布</h4><div class="box" id="c-dir"></div></div>
+        <div class="chart full"><h4>历史已实现盈亏（最近7天）</h4><div class="box" id="c-hist"></div></div>
+      </div>
+      <div class="panel">
+        <h4 style="color:var(--mut);margin-bottom:10px;font-size:13px">品种 / 方向明细</h4>
+        <div id="d-analysis" style="display:grid;grid-template-columns:1fr 1fr;gap:18px"></div>
+      </div>
+      <div class="panel" style="margin-top:18px;overflow:auto;max-height:420px">
+        <h4 style="color:var(--mut);margin-bottom:10px;font-size:13px">历史成交明细（平仓单 · 已实现盈亏）</h4>
+        <table id="t-hist"><thead></thead><tbody></tbody></table>
+      </div>
+    </div>
+
+    <!-- 管理 -->
+    <div class="page" id="p-manage">
+      <h2>风控规则（当前生效）</h2>
+      <div class="panel" style="margin-bottom:18px">
+        <div id="rules-card" class="small" style="line-height:1.9">加载中…</div>
+      </div>
+
+      <h2>品种映射管理</h2>
+      <div class="panel" style="margin-bottom:18px">
+        <div class="grid2">
+          <div><label>TradingView 品种</label><input id="m-tv" placeholder="如 XAUUSD"></div>
+          <div><label>MT5 FTMO 品种</label><input id="m-mt" placeholder="如 GOLD"></div>
+          <div><label>备注</label><input id="m-cmt" placeholder="可选"></div>
+        </div>
+        <button class="primary" onclick="saveMapping()">保存映射</button>
+        <div class="msg" id="m-msg"></div>
+        <table id="t-mapping" style="margin-top:16px"><thead><tr><th>TV 品种</th><th>MT5 品种</th><th>备注</th><th>操作</th></tr></thead><tbody></tbody></table>
+      </div>
+
+      <h2>实时持仓（MT5 当前持仓）</h2>
+      <div class="panel" style="margin-bottom:18px">
+        <div class="bar">
+          <button class="primary" onclick="loadPositions()">刷新持仓</button>
+          <span class="small" id="pos-status"></span>
+        </div>
+        <table id="t-pos" style="overflow:auto"><thead><tr><th>ticket</th><th>品种</th><th>方向</th><th>手数</th><th>开仓价</th><th>SL</th><th>TP</th><th>浮盈亏</th><th>操作</th></tr></thead><tbody></tbody></table>
+      </div>
+
+      <h2>测试信号（验证全链路）</h2>
+      <div class="panel">
+        <div class="grid2">
+          <div><label>方向</label>
+            <select id="t-act"><option>buy</option><option>sell</option><option>close</option></select>
+          </div>
+          <div><label>品种(TV名)</label><input id="t-sym" placeholder="如 XAUUSD"></div>
+          <div><label>手数 lot</label><input id="t-lot" value="0.01"></div>
+          <div><label>止损 SL</label><input id="t-sl" placeholder="0"></div>
+          <div><label>止盈 TP</label><input id="t-tp" placeholder="0"></div>
+        </div>
+        <button class="primary" onclick="sendTest()">发送测试信号</button>
+        <div class="msg" id="t-msg"></div>
+        <p class="small" style="margin-top:10px">⚠️ 测试信号会真实转发到桥接服务并可能在 FTMO 账户下单，请谨慎使用 lot。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $=(s)=>document.querySelector(s);
+let charts={};
+function mkChart(id){ if(charts[id]) charts[id].dispose(); return echarts.init(document.getElementById(id), 'dark'); }
+
+/* 导航 */
+document.querySelectorAll('.nav li').forEach(li=>{
+  li.onclick=()=>{
+    document.querySelectorAll('.nav li').forEach(x=>x.classList.remove('on'));
+    document.querySelectorAll('.page').forEach(x=>x.classList.remove('on'));
+    li.classList.add('on');
+    // 页面 id 形如 p-overview，data-p 为 overview，需补 p- 前缀
+    $('#p-'+li.dataset.p).classList.add('on');
+    if(li.dataset.p==='overview') loadOverview();
+    if(li.dataset.p==='signals') loadSignals();
+    if(li.dataset.p==='orders') loadOrders();
+    if(li.dataset.p==='analysis') loadAnalysis();
+    if(li.dataset.p==='manage'){ loadMapping(); loadPositions(); loadRules(); }
+  };
+});
+
+/* ---------- 风控规则（管理页） ---------- */
+function loadRules(){
+  const card=$('#rules-card');
+  card.innerHTML='加载中…';
+  fetch('/api/rules').then(r=>r.json()).then(d=>{
+    if(!d.ok){ card.innerHTML='<span style="color:var(--red)">桥接服务不可用，无法读取风控状态</span>'; return; }
+    const days=['','周一','周二','周三','周四','周五','周六','周日'];
+    const od=(d.trading_open_days||[]).map(x=>days[x]).join('、')||'全部';
+    const tf = d.trading_enabled===false ? '<span style="color:var(--red)">✕ 停用</span>'
+      : '<span style="color:var(--green)">✓ 启用</span>';
+    const now = d.trading_allowed_now
+      ? '<span style="color:var(--green)">可开仓</span>'
+      : '<span style="color:var(--red)">禁开仓</span>';
+    const ocMax = d.open_count_max>0 ? `${d.open_count}/${d.open_count_max}` : `${d.open_count}/不限`;
+    const nf = d.news_filter_enabled
+      ? `开启（拦截 ${(d.news_impact||[]).join('/')}，前后 ${d.news_window[0]}/${d.news_window[1]} 分钟）`
+      : '关闭';
+    card.innerHTML=[
+      `<div><b>交易时段</b>：总开关 ${tf}；允许开仓日 ${od}；UTC 窗口 ${d.trading_open_hours}` +
+        (d.trading_holidays&&d.trading_holidays.length?`；节假日 ${d.trading_holidays.join('、')}`:'') +
+        `<br>当前(UTC ${d.now_utc})：${now}${d.trading_reason?' — '+d.trading_reason:''}</div>`,
+      `<div><b>单日开仓次数</b>：今日 ${ocMax}（按 UTC 日重置）</div>`,
+      `<div><b>FTMO 1-Step</b>：单日亏损红线 ${(d.ftmo.daily_loss_pct*100).toFixed(0)}% / 总亏损红线 ${(d.ftmo.total_loss_pct*100).toFixed(0)}%（EOD Trailing）</div>`,
+      `<div><b>新闻过滤</b>：${nf}</div>`,
+    ].join('');
+  }).catch(()=>{ card.innerHTML='<span style="color:var(--red)">无法读取风控状态</span>'; });
+}
+
+/* ---------- 总览 ---------- */
+function loadNewsBar(){
+  fetch('/api/news').then(r=>r.json()).then(d=>{
+    if(!d.ok) return;
+    const bar=$('#news-bar');
+    if(!d.enabled){ bar.innerHTML=''; return; }
+    const state = d.blocked
+      ? `<span style="color:var(--red)">🔴 新闻过滤中：${(d.matched||[]).map(e=>e.country+' '+e.title+'@'+e.time).join('; ')}</span>`
+      : `<span style="color:var(--mut)">🟢 新闻过滤开启（拦截 ${(d.impact||[]).join('/')}，窗口${d.window}）</span>`;
+    bar.innerHTML='<div class="panel" style="padding:10px 14px;margin-bottom:14px;font-size:13px">'+state+'</div>';
+  });
+}
+function loadOverview(){
+  fetch('/api/overview').then(r=>r.json()).then(d=>{
+    if(!d.ok) return;
+    const live=d.live||{};
+    const dd=(live.daily_pnl||0);
+    const rk=(live.risk)||{};
+    const kpis=[
+      ['余额', fmtNum(live.balance), ''],
+      ['权益', fmtNum(live.equity), ''],
+      ['今日盈亏', fmtNum(dd), dd>=0?'up':'down'],
+      ['单日亏损 (红线'+fmtPct(0.03)+')', fmtPct(rk.daily_loss_pct), rk.daily_ok===false?'bad':''],
+      ['总亏损 (红线'+fmtPct(0.10)+')', fmtPct(rk.total_loss_pct), rk.total_ok===false?'bad':''],
+      ['信号总数', d.signal_total, ''],
+      ['待处理信号', d.signal_pending, d.signal_pending>0?'bad':''],
+      ['订单成功/失败', `${d.order_ok}/${d.order_fail}`, d.order_fail>0?'bad':''],
+      ['品种映射', d.mapping_count, ''],
+      ['盈利天数', `${d.win_days}/${d.day_total}`, '']
+    ];
+    $('#kpis').innerHTML=kpis.map(k=>`<div class="kpi"><div class="l">${k[0]}</div><div class="v ${k[2]}">${k[1]}</div></div>`).join('');
+
+    const eq=mkChart('c-equity');
+    eq.setOption({tooltip:{trigger:'axis'},grid:{left:50,right:20,top:30,bottom:30},
+      xAxis:{type:'category',data:d.daily.map(x=>x.dt)},
+      yAxis:{type:'value',scale:true},
+      series:[{name:'equity',type:'line',smooth:true,areaStyle:{opacity:.15},data:d.daily.map(x=>x.equity),itemStyle:{color:'#4f8cff'}}]});
+
+    const pn=mkChart('c-pnl');
+    pn.setOption({tooltip:{},grid:{left:50,right:20,top:30,bottom:30},
+      xAxis:{type:'category',data:d.daily.map(x=>x.dt)},
+      yAxis:{type:'value'},
+      series:[{type:'bar',data:d.daily.map(x=>({value:x.daily_pnl,itemStyle:{color:x.daily_pnl>=0?'#2ecc71':'#ff5b5b'}}))}]});
+
+    const sg=mkChart('c-signal');
+    sg.setOption({tooltip:{},legend:{bottom:0},
+      series:[{type:'pie',radius:['40%','65%'],center:['50%','45%'],
+        data:[{name:'已处理',value:d.signal_processed,itemStyle:{color:'#4f8cff'}},
+              {name:'待处理',value:d.signal_pending,itemStyle:{color:'#f5b942'}}]}]});
+    setTimeout(loadOverview,30000);
+  });
+}
+
+/* ---------- 信号 ---------- */
+let sigTimer;
+function loadSignals(){
+  const sym=$('#f-sym').value, act=$('#f-act').value;
+  fetch(`/api/signals?limit=200&symbol=${encodeURIComponent(sym)}&action=${act}`)
+    .then(r=>r.json()).then(d=>{
+    if(!d.ok) return;
+    const head=['signal_id','方向','TV品种','MT5品种','lot','SL','TP','时间','状态','说明'];
+    $('#t-signals thead').innerHTML='<tr>'+head.map(h=>`<th>${h}</th>`).join('')+'</tr>';
+    $('#t-signals tbody').innerHTML=d.rows.map(r=>{
+      const t=r.action==='close'?'close':r.action==='buy'?'buy':'sell';
+      return `<tr>
+        <td class="small">${r.signal_id}</td>
+        <td><span class="tag ${t}">${r.action}</span></td>
+        <td>${r.tv_symbol}</td><td>${r.mt5_symbol||'-'}</td>
+        <td>${r.lot}</td><td>${r.sl||'-'}</td><td>${r.tp||'-'}</td>
+        <td class="small">${r.received_at}</td>
+        <td>${r.processed?'<span class="ok">✔</span>':'<span class="bad">⏳</span>'}</td>
+        <td class="small">${esc(r.note||'')}</td>
+      </tr>`;
+    }).join('')||'<tr><td colspan="10" style="color:var(--mut)">暂无数据</td></tr>';
+    clearTimeout(sigTimer); sigTimer=setTimeout(loadSignals,10000);
+  });
+}
+
+/* ---------- 订单 ---------- */
+function loadOrders(){
+  fetch('/api/orders?limit=200').then(r=>r.json()).then(d=>{
+    if(!d.ok) return;
+    const head=['ticket','signal_id','品种','方向','lot','SL','TP','成交价','返回码','时间'];
+    $('#t-orders thead').innerHTML='<tr>'+head.map(h=>`<th>${h}</th>`).join('')+'</tr>';
+    $('#t-orders tbody').innerHTML=d.rows.map(r=>`<tr>
+      <td>${r.order_ticket}</td><td class="small">${r.signal_id}</td>
+      <td>${r.mt5_symbol}</td>
+      <td><span class="tag ${r.action==='buy'?'buy':'sell'}">${r.action}</span></td>
+      <td>${r.lot}</td><td>${r.sl||'-'}</td><td>${r.tp||'-'}</td>
+      <td>${fmtNum(r.price)}</td>
+      <td class="${r.retcode===0?'ok':'bad'}">${r.retcode}</td>
+      <td class="small">${r.created_at}</td>
+    </tr>`).join('')||'<tr><td colspan="10" style="color:var(--mut)">暂无数据</td></tr>';
+  });
+}
+
+/* ---------- 分析 ---------- */
+function loadAnalysis(){
+  fetch('/api/analysis').then(r=>r.json()).then(d=>{
+    if(!d.ok) return;
+    const cs=mkChart('c-sym');
+    cs.setOption({tooltip:{},grid:{left:50,right:20,top:20,bottom:60},legend:{bottom:0},
+      xAxis:{type:'category',data:d.by_symbol.map(x=>x.symbol),axisLabel:{rotate:30}},
+      yAxis:{type:'value'},series:[{type:'bar',data:d.by_symbol.map(x=>x.count),itemStyle:{color:'#4f8cff'}}]});
+    const cd=mkChart('c-dir');
+    cd.setOption({tooltip:{},legend:{bottom:0},series:[{type:'pie',radius:['40%','65%'],
+      data:d.by_action.map(x=>({name:x.action,value:x.count}))}]});
+    $('#d-analysis').innerHTML=
+      `<table><thead><tr><th>品种</th><th>信号数</th><th>成功</th><th>buy</th><th>sell</th></tr></thead>
+       <tbody>${d.by_symbol.map(x=>`<tr><td>${x.symbol}</td><td>${x.count}</td><td>${x.ok}</td><td>${x.buys}</td><td>${x.sells}</td></tr>`).join('')||'<tr><td colspan=5>暂无</td></tr>'}</tbody></table>
+       <table><thead><tr><th>方向</th><th>数量</th></tr></thead>
+       <tbody>${d.by_action.map(x=>`<tr><td>${x.action}</td><td>${x.count}</td></tr>`).join('')}</tbody></table>`;
+    loadHistory();
+  });
+}
+
+/* ---------- 历史盈亏 ---------- */
+function loadHistory(){
+  fetch('/api/history?days=7').then(r=>r.json()).then(d=>{
+    if(!d.ok){ return; }
+    const rows=d.rows||[];
+    const ch=mkChart('c-hist');
+    ch.setOption({tooltip:{trigger:'axis'},legend:{bottom:0},grid:{left:60,right:20,top:30,bottom:50},
+      xAxis:{type:'category',data:rows.map(r=>r.symbol),axisLabel:{rotate:30}},
+      yAxis:{type:'value'},
+      series:[{name:'盈亏',type:'bar',data:rows.map(r=>({value:r.profit,itemStyle:{color:r.profit>=0?'#2ecc71':'#ff5b5b'}}))}]});
+    const head=['时间','品种','方向','手数','成交价','盈亏','累计','order'];
+    $('#t-hist thead').innerHTML='<tr>'+head.map(h=>`<th>${h}</th>`).join('')+'</tr>';
+    let cum=0;
+    $('#t-hist tbody').innerHTML=rows.map(r=>{
+      cum+=r.profit;
+      return `<tr>
+        <td class="small">${r.time}</td><td>${r.symbol}</td>
+        <td><span class="tag ${r.type==='buy'?'buy':'sell'}">${r.type}</span></td>
+        <td>${r.volume}</td><td>${fmtNum(r.price)}</td>
+        <td class="${r.profit>=0?'ok':'bad'}">${fmtNum(r.profit)}</td>
+        <td class="${cum>=0?'ok':'bad'}">${fmtNum(cum)}</td>
+        <td class="small">${r.order}</td>
+      </tr>`;
+    }).join('')||'<tr><td colspan="8" style="color:var(--mut)">暂无历史成交（需 MT5 在线且有过平仓）</td></tr>';
+  });
+}
+
+/* ---------- 实时持仓 ---------- */
+function loadPositions(){
+  fetch('/api/positions').then(r=>r.json()).then(d=>{
+    const st=$('#pos-status');
+    if(!d.ok){ st.textContent='⚠️ '+d.msg; $('#t-pos tbody').innerHTML=''; return; }
+    st.textContent=`共 ${d.rows.length} 笔持仓`;
+    $('#t-pos tbody').innerHTML=d.rows.map(p=>`<tr>
+      <td>${p.ticket}</td><td>${p.symbol}</td>
+      <td><span class="tag ${p.type==='buy'?'buy':'sell'}">${p.type}</span></td>
+      <td>${p.volume}</td><td>${fmtNum(p.open_price)}</td>
+      <td>${fmtNum(p.sl)}</td><td>${fmtNum(p.tp)}</td>
+      <td class="${p.profit>=0?'ok':'bad'}">${fmtNum(p.profit)}</td>
+      <td><button onclick="closeTicket(${p.ticket})">平仓</button></td>
+    </tr>`).join('')||'<tr><td colspan="9" style="color:var(--mut)">当前无持仓</td></tr>';
+  });
+}
+function closeTicket(ticket){
+  if(!confirm('确认平掉持仓 ticket='+ticket+' ？此操作将真实下单！')) return;
+  fetch('/api/close-ticket',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket})})
+    .then(r=>r.json()).then(d=>{
+      const st=$('#pos-status');
+      st.textContent = d.ok ? ('✅ 平仓指令已发出 retcode='+d.retcode) : ('❌ '+d.msg);
+      if(d.ok) loadPositions();
+    });
+}
+
+/* ---------- 映射管理 ---------- */
+function loadMapping(){
+  fetch('/api/mapping').then(r=>r.json()).then(d=>{
+    if(!d.ok) return;
+    $('#t-mapping tbody').innerHTML=d.rows.map(x=>`<tr>
+      <td>${x.tv_symbol}</td><td>${x.mt5_symbol}</td><td>${x.comment||'-'}</td>
+      <td><button onclick="delMapping('${x.tv_symbol}')">删除</button></td>
+    </tr>`).join('')||'<tr><td colspan=4 style="color:var(--mut)">暂无映射</td></tr>';
+  });
+}
+function saveMapping(){
+  const body={tv_symbol:$('#m-tv').value,mt5_symbol:$('#m-mt').value,comment:$('#m-cmt').value};
+  fetch('/api/mapping',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+    .then(r=>r.json()).then(d=>{
+      const m=$('#m-msg'); m.className='msg '+(d.ok?'ok':'err'); m.textContent=d.msg;
+      if(d.ok){ $('#m-tv').value='';$('#m-mt').value='';$('#m-cmt').value=''; loadMapping(); }
+    });
+}
+function delMapping(tv){
+  if(!confirm('确认删除映射 '+tv+' ？')) return;
+  fetch('/api/mapping?tv_symbol='+encodeURIComponent(tv),{method:'DELETE'})
+    .then(r=>r.json()).then(d=>{ if(d.ok) loadMapping(); });
+}
+
+/* ---------- 测试信号 ---------- */
+function sendTest(){
+  const body={action:$('#t-act').value,symbol:$('#t-sym').value,
+    lot:$('#t-lot').value,sl:$('#t-sl').value,tp:$('#t-tp').value};
+  fetch('/api/test-signal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+    .then(r=>r.json()).then(d=>{
+      const m=$('#t-msg');
+      m.className='msg '+(d.ok?'ok':'err');
+      m.textContent = d.ok ? ('✅ 已转发到桥接服务 → '+JSON.stringify(d.bridge)) : ('❌ '+d.msg);
+      if(d.ok && d.payload) console.log('payload', d.payload);
+    });
+}
+
+function fmtNum(v){ return (v==null||v===''||isNaN(v)) ? '-' : Number(v).toLocaleString('en-US',{maximumFractionDigits:4}); }
+function fmtPct(v){ return (v==null||isNaN(v)) ? '-' : (v*100).toFixed(2)+'%'; }
+function esc(s){ return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+/* 启动 */
+loadNewsBar();
+loadOverview();
+
+/* URL 深链接：/?page=signals 直接打开指定页签（截图/书签用） */
+(function(){
+  const p = new URLSearchParams(location.search).get('page');
+  if(p){
+    const el = document.querySelector('.nav li[data-p="'+p+'"]');
+    if(el) el.click();
+  }
+})();
+</script>
+</body>
+</html>
